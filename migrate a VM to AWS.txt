@@ -1,3 +1,4 @@
+=============== Migrate VM to AWS ==========
 - Setup AWS CLI
     download CLI executable file for windows and install it.
 

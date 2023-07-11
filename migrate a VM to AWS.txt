@@ -1,0 +1,248 @@
+- Setup AWS CLI
+    download CLI executable file for windows and install it.
+
+- Create a IAM user name:
+     fetch its Access key and secret key values.
+- Configure AWS CLI
+    on command prompt run "aws configure"
+	 
+C:\Users\kapi4535>aws configure
+AWS Access Key ID [None]: AKIATDCGZ3VCHN2XY64S
+AWS Secret Access Key [None]: S5Nj8HRn9lbYhMh6VYxQgK3DRVL1sUVjTzY6QvIg
+Default region name [None]: ap-south-1
+Default output format [None]:
+C:\Users\kapi4535>
+
+to test your access you may run any CLI command ie: aws ec2 region
+
+====================== create a IAM role for VM import ======================
+
+create a trust policy.json file.
+
+{
+   "Version": "2012-10-17",
+   "Statement": [
+      {
+         "Effect": "Allow",
+         "Principal": { "Service": "vmie.amazonaws.com" },
+         "Action": "sts:AssumeRole",
+         "Condition": {
+            "StringEquals":{
+               "sts:Externalid": "vmimport"
+            }
+         }
+      }
+   ]
+}
+
+Create a Role now:
+
+aws iam create-role --role-name vmimport --assume-role-policy-document "file://C:\Users\kapi4535\Desktop\AWS_learning\trust-policy.json"
+
+C:\Users\kapi4535>aws iam create-role --role-name vmimport --assume-role-policy-document "file://C:\Users\kapi4535\Desktop\AWS_learning\trust-policy.json"
+{
+    "Role": {
+        "Path": "/",
+        "RoleName": "vmimport",
+        "RoleId": "AROATDCGZ3VCLQNRTFXGR",
+        "Arn": "arn:aws:iam::212749376836:role/vmimport",
+        "CreateDate": "2023-07-11T10:14:16+00:00",
+        "AssumeRolePolicyDocument": {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {
+                        "Service": "vmie.amazonaws.com"
+                    },
+                    "Action": "sts:AssumeRole",
+                    "Condition": {
+                        "StringEquals": {
+                            "sts:Externalid": "vmimport"
+                        }
+                    }
+                }
+            ]
+        }
+    }
+}
+
+
+C:\Users\kapi4535>
+
+- Export the VM image in .vmdk format
+
+- create the S3 bucket now
+
+koolkaps-s3
+
+==============Additional : how to mount a s3 bucket on a Linux server:
+
+install : s3fs-fuse, mailcap
+create a creds file : echo AWS_ACCESS_KEY:AWS_SECRET_KEY > ~/.passwd-s3fs
+echo AKIATDCGZ3VCHN2XY64S:S5Nj8HRn9lbYhMh6VYxQgK3DRVL1sUVjTzY6QvIg > ~/.passwd-s3fs; chmod 600 ~/.passwd-s3fs;mkdir /s3-bucket
+s3fs koolkaps-s3 /s3-bucket -o passwd_file=~/.passwd-s3fs
+=============
+
+upload the vmdk file to the bucket.
+
+
+################################# create a role policy now ####################################
+
+Code:
+
+{
+   "Version":"2012-10-17",
+   "Statement":[
+      {
+         "Effect": "Allow",
+         "Action": [
+            "s3:GetBucketLocation",
+            "s3:GetObject",
+            "s3:ListBucket" 
+         ],
+         "Resource": [
+            "arn:aws:s3:::koolkaps-s3",
+            "arn:aws:s3:::koolkaps-s3/*"
+         ]
+      },
+      {
+         "Effect": "Allow",
+         "Action": [
+            "s3:GetBucketLocation",
+            "s3:GetObject",
+            "s3:ListBucket",
+            "s3:PutObject",
+            "s3:GetBucketAcl"
+         ],
+         "Resource": [
+            "arn:aws:s3:::export-bucket",
+            "arn:aws:s3:::export-bucket/*"
+         ]
+      },
+      {
+         "Effect": "Allow",
+         "Action": [
+            "ec2:ModifySnapshotAttribute",
+            "ec2:CopySnapshot",
+            "ec2:RegisterImage",
+            "ec2:Describe*"
+         ],
+         "Resource": "*"
+      }
+   ]
+}
+
+Import the policy:
+
+C:\Users\kapi4535>aws iam put-role-policy --role-name vmimport --policy-name vmimport --policy-document "file://C:\Users\kapi4535\Desktop\AWS_learning\role-policy.json"
+
+#########################################
+create the container file now
+
+Code:
+
+[
+  {
+    "Description": "test VMware to AWS deployment",
+    "Format": "vmdk",
+    "UserBucket": {
+        "S3Bucket": "koolkaps-s3",
+        "S3Key": "Kube-slave-disk1.vmdk"
+    }
+  }
+]
+
+Import the image to the AMIs:
+
+C:\Users\kapi4535>aws ec2 import-image --description "VMWare to AWS migration test" --disk-containers "file://C:\Users\kapi4535\Desktop\AWS_learning\containers.json"
+{
+    "Description": "VMWare to AWS migration test",
+    "ImportTaskId": "import-ami-00cf1636df1ab31c3",
+    "Progress": "1",
+    "SnapshotDetails": [
+        {
+            "Description": "test VMware to AWS deployment",
+            "DiskImageSize": 0.0,
+            "Format": "VMDK",
+            "UserBucket": {
+                "S3Bucket": "koolkaps-s3",
+                "S3Key": "Kube-slave-disk1.vmdk"
+            }
+        }
+    ],
+    "Status": "active",
+    "StatusMessage": "pending"
+}
+
+
+C:\Users\kapi4535>
+
+- to check the import status:
+
+C:\Users\kapi4535>aws ec2 describe-import-image-tasks --import-task-ids import-ami-00cf1636df1ab31c3
+{
+    "ImportImageTasks": [
+        {
+            "Description": "VMWare to AWS migration test",
+            "ImportTaskId": "import-ami-00cf1636df1ab31c3",
+            "Progress": "19",
+            "SnapshotDetails": [
+                {
+                    "Description": "test VMware to AWS deployment",
+                    "DiskImageSize": 2073022464.0,
+                    "Format": "VMDK",
+                    "Status": "active",
+                    "UserBucket": {
+                        "S3Bucket": "koolkaps-s3",
+                        "S3Key": "Kube-slave-disk1.vmdk"
+                    }
+                }
+            ],
+            "Status": "active",
+            "StatusMessage": "converting",
+            "Tags": []
+        }
+    ]
+}
+
+
+C:\Users\kapi4535>
+
+
+C:\Users\kapi4535>aws ec2 describe-import-image-tasks --import-task-ids import-ami-00cf1636df1ab31c3
+{
+    "ImportImageTasks": [
+        {
+            "Architecture": "x86_64",
+            "Description": "VMWare to AWS migration test",
+            "ImageId": "ami-03500c42cfaea2599",
+            "ImportTaskId": "import-ami-00cf1636df1ab31c3",
+            "LicenseType": "BYOL",
+            "Platform": "Linux",
+            "SnapshotDetails": [
+                {
+                    "Description": "test VMware to AWS deployment",
+                    "DeviceName": "/dev/sda1",
+                    "DiskImageSize": 2073022464.0,
+                    "Format": "VMDK",
+                    "SnapshotId": "snap-0f6dac381946c9f6f",
+                    "Status": "completed",
+                    "UserBucket": {
+                        "S3Bucket": "koolkaps-s3",
+                        "S3Key": "Kube-slave-disk1.vmdk"
+                    }
+                }
+            ],
+            "Status": "completed",
+            "Tags": [],
+            "BootMode": "legacy_bios"
+        }
+    ]
+}
+
+
+C:\Users\kapi4535>
+
+
+This image will now be showing under AMIs which can later be used to deploy instances.
